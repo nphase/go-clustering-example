@@ -8,7 +8,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/hashicorp/memberlist"
 	"github.com/nphase/crdt"
@@ -17,10 +16,11 @@ import (
 )
 
 var (
-	mtx        sync.RWMutex
-	members    = flag.String("members", "", "comma seperated list of members")
-	port       = flag.Int("port", 4001, "http port")
-	counter    = &crdt.GCounter{}
+	counter = &crdt.GCounter{}
+
+	members = flag.String("members", "", "comma seperated list of members")
+	port    = flag.Int("port", 4001, "http port")
+
 	broadcasts *memberlist.TransmitLimitedQueue
 )
 
@@ -34,10 +34,6 @@ type delegate struct{}
 type update struct {
 	Action string          // merge
 	Data   json.RawMessage // crdt.GCounterJSON
-}
-
-func init() {
-	flag.Parse()
 }
 
 func (b *broadcast) Invalidates(other memberlist.Broadcast) bool {
@@ -71,7 +67,6 @@ func (d *delegate) NotifyMsg(b []byte) {
 		if err := json.Unmarshal(b[1:], &update); err != nil {
 			return
 		}
-		mtx.Lock()
 
 		switch update.Action {
 		case "merge":
@@ -79,7 +74,6 @@ func (d *delegate) NotifyMsg(b []byte) {
 			counter.Merge(external_crdt)
 		}
 
-		mtx.Unlock()
 	}
 }
 
@@ -88,10 +82,9 @@ func (d *delegate) GetBroadcasts(overhead, limit int) [][]byte {
 }
 
 func (d *delegate) LocalState(join bool) []byte {
-	mtx.RLock()
-	m := counter
-	mtx.RUnlock()
-	b, _ := json.Marshal(m)
+
+	b, _ := counter.MarshalJSON()
+
 	return b
 }
 
@@ -103,19 +96,15 @@ func (d *delegate) MergeRemoteState(buf []byte, join bool) {
 		return
 	}
 
-	mtx.Lock()
-
 	external_crdt := crdt.NewGCounterFromJSONBytes(buf)
 	counter.Merge(external_crdt)
 
-	mtx.Unlock()
 }
 
 //handle inc Request
 func incHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	amount_form_value := r.Form.Get("amount")
-	mtx.Lock()
 
 	//parse inc amount
 	amount, parse_err := strconv.Atoi(amount_form_value)
@@ -125,53 +114,30 @@ func incHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if amount < 0 {
+		http.Error(w, "Deprecation not supported", 501)
+		return
+	}
+
 	counter.IncVal(amount)
 
 	val := strconv.Itoa(counter.Count())
 	w.Write([]byte(val))
 
-	mtx.Unlock()
-
-	//Async: Begin merge broadcast
-
-	go func() {
-		counter_json, marshal_err := counter.MarshalJSON()
-
-		if marshal_err != nil {
-			http.Error(w, marshal_err.Error(), 500)
-			return
-		}
-
-		b, err := json.Marshal(&update{
-			Action: "merge",
-			Data:   counter_json,
-		})
-
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-
-		broadcasts.QueueBroadcast(&broadcast{
-			msg:    append([]byte("d"), b...),
-			notify: nil,
-		})
-	}()
+	//broadcast the state
+	go BroadcastState()
 }
 
 func getHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 
-	mtx.RLock()
 	val := strconv.Itoa(counter.Count())
-	mtx.RUnlock()
+
 	w.Write([]byte(val))
 }
 
 func verboseHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-
-	mtx.RLock()
 
 	counter_json, marshal_err := counter.MarshalJSON()
 
@@ -180,11 +146,38 @@ func verboseHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mtx.RUnlock()
 	w.Write(counter_json)
 }
 
+//Broadcast a message to all members
+func BroadcastState() {
+
+	counter_json, marshal_err := counter.MarshalJSON()
+
+	if marshal_err != nil {
+		panic("Failed to marshal counter state in BroadcastState()")
+		return
+	}
+
+	b, err := json.Marshal(&update{
+		Action: "merge",
+		Data:   counter_json,
+	})
+
+	if err != nil {
+		panic("Failed to marshal broadcast message in BroadcastState()")
+		return
+	}
+
+	broadcasts.QueueBroadcast(&broadcast{
+		msg:    append([]byte("d"), b...),
+		notify: nil,
+	})
+
+}
+
 func start() error {
+	flag.Parse()
 
 	counter = crdt.NewGCounter()
 
