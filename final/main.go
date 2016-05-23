@@ -71,8 +71,10 @@ func (d *delegate) NotifyMsg(b []byte) {
 
 	switch update.Action {
 	case "merge":
-		external_crdt := crdt.NewGCounterFromJSONBytes([]byte(update.Data))
-		counter.Merge(external_crdt)
+		externalCRDT := crdt.NewGCounterFromJSONBytes([]byte(update.Data))
+		counter.Merge(externalCRDT)
+	default:
+		panic("unsupported update action")
 	}
 
 }
@@ -84,7 +86,11 @@ func (d *delegate) GetBroadcasts(overhead, limit int) [][]byte {
 //share the local counter state
 func (d *delegate) LocalState(join bool) []byte {
 
-	b, _ := counter.MarshalJSON()
+	b, err := counter.MarshalJSON()
+
+	if err != nil {
+		panic(err)
+	}
 
 	return b
 }
@@ -102,23 +108,23 @@ func (d *delegate) MergeRemoteState(buf []byte, join bool) {
 
 	fmt.Println("Initiated MergeRemoteState")
 
-	external_crdt := crdt.NewGCounterFromJSONBytes(buf)
-	counter.Merge(external_crdt)
+	externalCRDT := crdt.NewGCounterFromJSONBytes(buf)
+	counter.Merge(externalCRDT)
 
 }
 
-//Broadcast a message to all members
+// BroadcastState broadcasts the local counter state to all cluster members
 func BroadcastState() {
 
-	counter_json, marshal_err := counter.MarshalJSON()
+	counterJSON, marshalErr := counter.MarshalJSON()
 
-	if marshal_err != nil {
+	if marshalErr != nil {
 		panic("Failed to marshal counter state in BroadcastState()")
 	}
 
 	b, err := json.Marshal(&update{
 		Action: "merge",
-		Data:   counter_json,
+		Data:   counterJSON,
 	})
 
 	if err != nil {

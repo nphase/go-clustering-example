@@ -9,18 +9,18 @@ import (
 // HTTP Handler for increment requets. Takes the form of /inc?amount=1
 func incHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	amount_form_value := r.Form.Get("amount")
+	amountForm := r.Form.Get("amount")
 
 	//parse inc amount
-	amount, parse_err := strconv.Atoi(amount_form_value)
+	amount, parseErr := strconv.Atoi(amountForm)
 
-	if parse_err != nil {
-		http.Error(w, parse_err.Error(), 500)
+	if parseErr != nil {
+		http.Error(w, parseErr.Error(), 500)
 		return
 	}
 
-	if amount < 0 {
-		http.Error(w, "Deprecation not supported", 501)
+	if amount < 1 {
+		http.Error(w, "Only positive amounts are supported", 501)
 		return
 	}
 
@@ -45,14 +45,14 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 // HTTP Handler to fetch the full local CRDT's counter state
 func verboseHandler(w http.ResponseWriter, r *http.Request) {
 
-	counter_json, marshal_err := counter.MarshalJSON()
+	counterJSON, marshalErr := counter.MarshalJSON()
 
-	if marshal_err != nil {
-		http.Error(w, marshal_err.Error(), 500)
+	if marshalErr != nil {
+		http.Error(w, marshalErr.Error(), 500)
 		return
 	}
 
-	w.Write(counter_json)
+	w.Write(counterJSON)
 }
 
 // HTTP Handler to fetch the cluster membership state

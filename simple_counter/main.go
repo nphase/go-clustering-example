@@ -14,31 +14,33 @@ var (
 )
 
 type Counter struct {
-	val *int32
+	val int32
 }
 
+// IncVal increments the counter's value by d
 func (c *Counter) IncVal(d int) {
 
-	atomic.AddInt32(c.val, 1)
+	atomic.AddInt32(&c.val, int32(d))
 
 }
 
+// Count fetches the counter value
 func (c *Counter) Count() int {
 
-	return int(atomic.LoadInt32(c.val))
+	return int(atomic.LoadInt32(&c.val))
 
 }
 
 //handle inc Request
 func incHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	amount_form_value := r.Form.Get("amount")
+	amountForm := r.Form.Get("amount")
 
 	//parse inc amount
-	amount, parse_err := strconv.Atoi(amount_form_value)
+	amount, parseErr := strconv.Atoi(amountForm)
 
-	if parse_err != nil {
-		http.Error(w, parse_err.Error(), 500)
+	if parseErr != nil {
+		http.Error(w, parseErr.Error(), 500)
 		return
 	}
 
@@ -60,23 +62,8 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(val))
 }
 
-func start() error {
-
-	counter_val := int32(0)
-
-	counter = &Counter{
-		val: &counter_val,
-	}
-
-	return nil
-}
-
 func main() {
 	flag.Parse()
-
-	if err := start(); err != nil {
-		fmt.Println(err)
-	}
 
 	http.HandleFunc("/inc", incHandler)
 	http.HandleFunc("/", getHandler)
