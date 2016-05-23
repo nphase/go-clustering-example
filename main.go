@@ -6,18 +6,21 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/hashicorp/memberlist"
-	"github.com/pborman/uuid"
+	"github.com/nphase/crdt"
+
+	uuid "github.com/satori/go.uuid"
 )
 
 var (
 	mtx        sync.RWMutex
 	members    = flag.String("members", "", "comma seperated list of members")
 	port       = flag.Int("port", 4001, "http port")
-	items      = map[string]string{}
+	counter    = &crdt.GCounter{}
 	broadcasts *memberlist.TransmitLimitedQueue
 )
 
@@ -29,8 +32,8 @@ type broadcast struct {
 type delegate struct{}
 
 type update struct {
-	Action string // add, del
-	Data   map[string]string
+	Action string          // merge
+	Data   json.RawMessage // crdt.GCounterJSON
 }
 
 func init() {
@@ -55,29 +58,27 @@ func (d *delegate) NodeMeta(limit int) []byte {
 	return []byte{}
 }
 
+//Handle merge events via gossip
 func (d *delegate) NotifyMsg(b []byte) {
-	fmt.Printf("Received Message! %+v\n", string(b))
+
 	if len(b) == 0 {
 		return
 	}
 
 	switch b[0] {
 	case 'd': // data
-		var updates []*update
-		if err := json.Unmarshal(b[1:], &updates); err != nil {
+		var update *update
+		if err := json.Unmarshal(b[1:], &update); err != nil {
 			return
 		}
 		mtx.Lock()
-		for _, u := range updates {
-			for k, v := range u.Data {
-				switch u.Action {
-				case "add":
-					items[k] = v
-				case "del":
-					delete(items, k)
-				}
-			}
+
+		switch update.Action {
+		case "merge":
+			external_crdt := crdt.NewGCounterFromJSONBytes([]byte(update.Data))
+			counter.Merge(external_crdt)
 		}
+
 		mtx.Unlock()
 	}
 }
@@ -88,7 +89,7 @@ func (d *delegate) GetBroadcasts(overhead, limit int) [][]byte {
 
 func (d *delegate) LocalState(join bool) []byte {
 	mtx.RLock()
-	m := items
+	m := counter
 	mtx.RUnlock()
 	b, _ := json.Marshal(m)
 	return b
@@ -101,87 +102,97 @@ func (d *delegate) MergeRemoteState(buf []byte, join bool) {
 	if !join {
 		return
 	}
-	var m map[string]string
-	if err := json.Unmarshal(buf, &m); err != nil {
-		return
-	}
+
 	mtx.Lock()
-	for k, v := range m {
-		items[k] = v
-	}
+
+	external_crdt := crdt.NewGCounterFromJSONBytes(buf)
+	counter.Merge(external_crdt)
+
 	mtx.Unlock()
 }
 
-func addHandler(w http.ResponseWriter, r *http.Request) {
+//handle inc Request
+func incHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	key := r.Form.Get("key")
-	val := r.Form.Get("val")
+	amount_form_value := r.Form.Get("amount")
 	mtx.Lock()
-	items[key] = val
-	mtx.Unlock()
 
-	b, err := json.Marshal([]*update{
-		&update{
-			Action: "add",
-			Data: map[string]string{
-				key: val,
-			},
-		},
-	})
+	//parse inc amount
+	amount, parse_err := strconv.Atoi(amount_form_value)
 
-	if err != nil {
-		http.Error(w, err.Error(), 500)
+	if parse_err != nil {
+		http.Error(w, parse_err.Error(), 500)
 		return
 	}
 
-	broadcasts.QueueBroadcast(&broadcast{
-		msg:    append([]byte("d"), b...),
-		notify: nil,
-	})
-}
+	counter.IncVal(amount)
 
-func delHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	key := r.Form.Get("key")
-	mtx.Lock()
-	delete(items, key)
+	val := strconv.Itoa(counter.Count())
+	w.Write([]byte(val))
+
 	mtx.Unlock()
 
-	b, err := json.Marshal([]*update{
-		&update{
-			Action: "del",
-			Data: map[string]string{
-				key: "",
-			},
-		},
-	})
+	//Async: Begin merge broadcast
 
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
+	go func() {
+		counter_json, marshal_err := counter.MarshalJSON()
 
-	broadcasts.QueueBroadcast(&broadcast{
-		msg:    append([]byte("d"), b...),
-		notify: nil,
-	})
+		if marshal_err != nil {
+			http.Error(w, marshal_err.Error(), 500)
+			return
+		}
+
+		b, err := json.Marshal(&update{
+			Action: "merge",
+			Data:   counter_json,
+		})
+
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
+		broadcasts.QueueBroadcast(&broadcast{
+			msg:    append([]byte("d"), b...),
+			notify: nil,
+		})
+	}()
 }
 
 func getHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	key := r.Form.Get("key")
+
 	mtx.RLock()
-	val := items[key]
+	val := strconv.Itoa(counter.Count())
 	mtx.RUnlock()
 	w.Write([]byte(val))
 }
 
+func verboseHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+
+	mtx.RLock()
+
+	counter_json, marshal_err := counter.MarshalJSON()
+
+	if marshal_err != nil {
+		http.Error(w, marshal_err.Error(), 500)
+		return
+	}
+
+	mtx.RUnlock()
+	w.Write(counter_json)
+}
+
 func start() error {
+
+	counter = crdt.NewGCounter()
+
 	hostname, _ := os.Hostname()
-	c := memberlist.DefaultLocalConfig()
+	c := memberlist.DefaultWANConfig()
 	c.Delegate = &delegate{}
 	c.BindPort = 0
-	c.Name = hostname + "-" + uuid.NewUUID().String()
+	c.Name = hostname + "-" + uuid.NewV4().String()
 	m, err := memberlist.Create(c)
 	if err != nil {
 		return err
@@ -209,9 +220,11 @@ func main() {
 		fmt.Println(err)
 	}
 
-	http.HandleFunc("/add", addHandler)
-	http.HandleFunc("/del", delHandler)
-	http.HandleFunc("/get", getHandler)
+	http.HandleFunc("/verbose", verboseHandler)
+	http.HandleFunc("/inc", incHandler)
+
+	http.HandleFunc("/", getHandler)
+
 	fmt.Printf("Listening on :%d\n", *port)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		fmt.Println(err)
