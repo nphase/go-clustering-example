@@ -25,9 +25,8 @@ func (c *Counter) IncVal(d int) {
 
 func (c *Counter) Count() int {
 
-	x := int(atomic.LoadInt32(c.val))
+	return int(atomic.LoadInt32(c.val))
 
-	return x
 }
 
 //handle inc Request

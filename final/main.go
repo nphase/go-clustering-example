@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/hashicorp/memberlist"
@@ -22,14 +21,14 @@ var (
 	port    = flag.Int("port", 4001, "http port")
 
 	broadcasts *memberlist.TransmitLimitedQueue
+
+	m *memberlist.Memberlist
 )
 
 type broadcast struct {
 	msg    []byte
 	notify chan<- struct{}
 }
-
-type delegate struct{}
 
 type update struct {
 	Action string          // merge
@@ -50,6 +49,8 @@ func (b *broadcast) Finished() {
 	}
 }
 
+type delegate struct{}
+
 func (d *delegate) NodeMeta(limit int) []byte {
 	return []byte{}
 }
@@ -61,26 +62,26 @@ func (d *delegate) NotifyMsg(b []byte) {
 		return
 	}
 
-	switch b[0] {
-	case 'd': // data
-		var update *update
-		if err := json.Unmarshal(b[1:], &update); err != nil {
-			return
-		}
+	fmt.Printf("Received A Message!\n\t%+v\n", string(b))
 
-		switch update.Action {
-		case "merge":
-			external_crdt := crdt.NewGCounterFromJSONBytes([]byte(update.Data))
-			counter.Merge(external_crdt)
-		}
-
+	var update *update
+	if err := json.Unmarshal(b, &update); err != nil {
+		return
 	}
+
+	switch update.Action {
+	case "merge":
+		external_crdt := crdt.NewGCounterFromJSONBytes([]byte(update.Data))
+		counter.Merge(external_crdt)
+	}
+
 }
 
 func (d *delegate) GetBroadcasts(overhead, limit int) [][]byte {
 	return broadcasts.GetBroadcasts(overhead, limit)
 }
 
+//share the local counter state
 func (d *delegate) LocalState(join bool) []byte {
 
 	b, _ := counter.MarshalJSON()
@@ -88,65 +89,22 @@ func (d *delegate) LocalState(join bool) []byte {
 	return b
 }
 
+// Merge in received counter state whenever
+// join = false means this was received after a push/pull sync.
 func (d *delegate) MergeRemoteState(buf []byte, join bool) {
 	if len(buf) == 0 {
 		return
 	}
+
 	if !join {
 		return
 	}
 
+	fmt.Println("Initiated MergeRemoteState")
+
 	external_crdt := crdt.NewGCounterFromJSONBytes(buf)
 	counter.Merge(external_crdt)
 
-}
-
-//handle inc Request
-func incHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	amount_form_value := r.Form.Get("amount")
-
-	//parse inc amount
-	amount, parse_err := strconv.Atoi(amount_form_value)
-
-	if parse_err != nil {
-		http.Error(w, parse_err.Error(), 500)
-		return
-	}
-
-	if amount < 0 {
-		http.Error(w, "Deprecation not supported", 501)
-		return
-	}
-
-	counter.IncVal(amount)
-
-	val := strconv.Itoa(counter.Count())
-	w.Write([]byte(val))
-
-	//broadcast the state
-	go BroadcastState()
-}
-
-func getHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-
-	val := strconv.Itoa(counter.Count())
-
-	w.Write([]byte(val))
-}
-
-func verboseHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-
-	counter_json, marshal_err := counter.MarshalJSON()
-
-	if marshal_err != nil {
-		http.Error(w, marshal_err.Error(), 500)
-		return
-	}
-
-	w.Write(counter_json)
 }
 
 //Broadcast a message to all members
@@ -156,7 +114,6 @@ func BroadcastState() {
 
 	if marshal_err != nil {
 		panic("Failed to marshal counter state in BroadcastState()")
-		return
 	}
 
 	b, err := json.Marshal(&update{
@@ -166,11 +123,10 @@ func BroadcastState() {
 
 	if err != nil {
 		panic("Failed to marshal broadcast message in BroadcastState()")
-		return
 	}
 
 	broadcasts.QueueBroadcast(&broadcast{
-		msg:    append([]byte("d"), b...),
+		msg:    b,
 		notify: nil,
 	})
 
@@ -186,7 +142,10 @@ func start() error {
 	c.Delegate = &delegate{}
 	c.BindPort = 0
 	c.Name = hostname + "-" + uuid.NewV4().String()
-	m, err := memberlist.Create(c)
+
+	var err error
+
+	m, err = memberlist.Create(c)
 	if err != nil {
 		return err
 	}
@@ -213,9 +172,9 @@ func main() {
 		fmt.Println(err)
 	}
 
+	http.HandleFunc("/cluster", clusterHandler)
 	http.HandleFunc("/verbose", verboseHandler)
 	http.HandleFunc("/inc", incHandler)
-
 	http.HandleFunc("/", getHandler)
 
 	fmt.Printf("Listening on :%d\n", *port)
