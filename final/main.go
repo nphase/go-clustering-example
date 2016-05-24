@@ -18,8 +18,9 @@ import (
 var (
 	counter = &crdt.GCounter{}
 
-	members = flag.String("members", "", "comma seperated list of members")
-	port    = flag.Int("port", 4001, "http port")
+	members  = flag.String("members", "", "comma seperated list of members")
+	port     = flag.Int("port", 4001, "http port")
+	rpc_port = flag.Int("rpc_port", 0, "memberlist port (0 = auto select)")
 
 	broadcasts *memberlist.TransmitLimitedQueue
 
@@ -147,7 +148,7 @@ func start() error {
 	hostname, _ := os.Hostname()
 	c := memberlist.DefaultWANConfig()
 	c.Delegate = &delegate{}
-	c.BindPort = 0
+	c.BindPort = *rpc_port
 	c.Name = hostname + "-" + uuid.NewV4().String()
 
 	c.PushPullInterval = time.Second * 5 // to make it demonstrable

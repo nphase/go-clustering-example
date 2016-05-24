@@ -81,7 +81,7 @@ First, a basic counter service
 
 Let's stand one up in each.
 
-* Demo Slide
+* Demo (3 nodes, each with diverging counters)
 
 *This*slide*is*incomplete*
 
@@ -110,9 +110,9 @@ Enter, the [[https://github.com/hashicorp/memberlist][memberlist]] package
 
 *This*slide*is*incomplete*
 
-* Demo Slide of cluster membership
+* Demo (of cluster membership)
 
-Still not communicating counter state.
+(Still not communicating counter state.)
 
 *This*slide*is*incomplete*
 
@@ -135,14 +135,46 @@ Some notes can be found [[http://hal.upmc.fr/inria-00555588/document][here]] and
 
 * G-Counter
 
-- Implemented here: a G-Counter. grow-only counter in which only increments & merges are possible. 
+Perhaps one of the most basic CRDTs:
+
+- A counter with only two ops: increment and merge (no decrement!)
+- Each node manages its own count
+- Nodes communicate their counter state with other nodes
+- Merges take the max() count for each node
+
+- Final Counter Value is the sum of all node counts
 
 
 * Slide showing off code with CRDT implemented
 
-*This*slide*is*incomplete*
+	type GCounter struct {
+		// ident provides a unique identity to each replica.
+		ident string
 
-* Demo Slide of CRDT implemented
+		// counter maps identity of each replica to their counter values
+		counter map[string]int
+	}
+
+	func (g *GCounter) IncVal(incr int) {
+		g.counter[g.ident] += incr
+	}
+
+	func (g *GCounter) Count() (total int) {
+		for _, val := range g.counter {
+			total += val
+		}
+		return 
+	}
+
+	func (g *GCounter) Merge(c *GCounter) {
+		for ident, val := range c.counter {
+			if v, ok := g.counter[ident]; !ok || v < val {
+				g.counter[ident] = val
+			}
+		}
+	}
+
+* Demo (of CRDT's internals)
 
 See the internals? Damn, still not merging
 
@@ -150,15 +182,20 @@ See the internals? Damn, still not merging
 
 * Now let's merge state
 
-* Slide
+* Slide showing push/pull state merge code
 
-* Slide
+- Explain push/pull state
+- Explain the 3 second timeout.
+
+* Demo (of the push pull sync itself)
+
+(it works!)
 
 * Slide
 
 * Next:
 
-- Hook up Jepsen
+- Jepsen testing
 
 
 * Slide
