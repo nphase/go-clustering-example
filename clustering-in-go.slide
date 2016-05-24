@@ -9,7 +9,7 @@ MediaMath
 * Who am I?
 - Golang enthusiast
 - These days, mostly codes for fun
-- Oversee Infrastruture & Platform @ [[http://careers.mediamath.com][MediaMath]]
+- Focused on Infrastruture & Platform @ [[http://careers.mediamath.com][MediaMath]]
 - We're hiring!
 
 * Why Go?
@@ -19,50 +19,160 @@ MediaMath
 - Lot's of community libraries & utilities
 - Great built-in tooling (like go fmt, test, vet, -race, etc) 
 - Just "feels" productive
+- (This is not a language pitch talk)
 
 * Why "Clustering in Go"?
 
 * Why "Clustering in Go"?
 
 - Clustering is not batteries included in Golang
-- Many newer libraries, none very mature
+- Lots of newer libraries, none very mature
 - More often not, services roll it themselves
 
+- So, here's one way of building a clustered, stateful service in Go.
 *This*slide*is*incomplete*
 
 
 * And now, for a (fake-ish) scenario
 
-- Multiple (3) Datacenters,
-- Separated by thousands of miles each (ORD, HKG, AMS),
-- With lots of events happening at each one.
+- Multiple datacenters
+- Separated by thousands of miles each (eg, ORD - HKG - AMS),
+- With many events happening concurrently at each one.
+
 - *We*want*to*count*them.*
 
-* Some Constraints:
+* With some constraints:
 
-- Counting should be *fast* (we can't afford to cross the ocean every time)
+- Counting should be *fast*, we can't afford to cross the ocean every time
 - Counts should be *correct* (please don't lose my events)
-- Counts shouldn't 
+
+Starting to look like an AP system, right?
 
 
-* Go design
+* Let's get started
 
-[[http://www.amazon.com/gp/product/1469769166/ref=as_li_ss_tl?ie=UTF8&camp=1789&creative=390957&creativeASIN=1469769166&linkCode=as2&tag=satishtalimsw-20][Google researchers]] designed the Go programming language that helped them solve the problems they had:
+First, a basic counter service
 
-- software needs to be built quickly,
-- the language should *run*well*on*modern*multi-core*hardware*,
-- work well in a networked environment, 
-- be a pleasure to use.
+- One node
+- Counter = Atomic Int
+- Nothin Fancy
 
-* With Go...
+ $ curl http://localhost:4000/
 
-you code less, compile quicker, execute_faster => have more fun! 
+ 0
+
+ $ curl http://localhost:4000/inc?amount=1
+ 
+ 1 
+
+
+* A basic Counter Service
+
 
 .play simple_counter/main.go /START OMIT/,/END OMIT/
 
-* Python and Ruby programmers...
 
-come to Go because they don't have to surrender much expressiveness, but gain performance and get to play with [[http://commandcenter.blogspot.de/2012/06/less-is-exponentially-more.html][concurrency]] (which is baked right into the language with channels and goroutines).
+* Ok, let's geodistribute it.
+
+* Ok, let's geodistribute it.
+
+- A node (or several) in each datacenter
+- Requests routed to the closest node
+
+Let's stand one up in each.
+
+* Demo Slide
+
+*This*slide*is*incomplete*
+
+* Duh, we're not replicating state!
+
+- We need the counters to talk to each other
+- Which means we need the nodes to know about each other
+- Which means we need to to solve for cluster membership
+
+Enter, the [[https://github.com/hashicorp/memberlist][memberlist]] package
+
+* Memberlist
+
+- A Go library that manages cluster membership
+- Based on [[https://www.cs.cornell.edu/~asdas/research/dsn02-swim.pdf][SWIM]], a gossip-style membership protocol
+- Has baked in member failure detection
+- Used by Consul, Docker, libnetwork, many more 
+
+* About SWIM
+
+- "Scalable Weakly-consistent Infection-style Process Group Membership Protocol"
+
+*This*slide*is*incomplete*
+
+* Slide showing off code with memberlist implemented
+
+*This*slide*is*incomplete*
+
+* Demo Slide of cluster membership
+
+Still not communicating counter state.
+
+*This*slide*is*incomplete*
+
+
+
+* CRDTs to the rescue!
+
+* CRDTs, simplified
+
+- CRDT = Conflict-Free Replicated Data Types
+- Counters, Sets, Maps, et al
+- Order-free
+- Eventually consistent: there is no single source of truth!
+- Operations within the type must be associative, commutative, and idempotent
+- Therefore, very easy to handle failure: just retry the merge!
+
+
+
+Some notes can be found [[http://hal.upmc.fr/inria-00555588/document][here]] and [[https://github.com/pfraze/crdt_notes][here]] (among many others!). 
+
+* G-Counter
+
+- Implemented here: a G-Counter. grow-only counter in which only increments & merges are possible. 
+
+
+* Slide showing off code with CRDT implemented
+
+*This*slide*is*incomplete*
+
+* Demo Slide of CRDT implemented
+
+See the internals? Damn, still not merging
+
+*This*slide*is*incomplete*
+
+* Now let's merge state
+
+* Slide
+
+* Slide
+
+* Slide
+
+* Next:
+
+- Hook up Jepsen
+
+
+* Slide
+
+* Slide
+
+* Slide
+
+
+
+
+
+
+
 
 * Go is a language...
 - that has the feel of a dynamic language like Ruby or Python, but has the [[http://www.amazon.com/gp/product/1469769166/ref=as_li_ss_tl?ie=UTF8&camp=1789&creative=390957&creativeASIN=1469769166&linkCode=as2&tag=satishtalimsw-20][performance and safety]] of languages like C or Java.

@@ -63,7 +63,7 @@ func (d *delegate) NotifyMsg(b []byte) {
 		return
 	}
 
-	fmt.Printf("Received A Message!\n\t%+v\n", string(b))
+	fmt.Printf("Received A Message!\n\t%+s\n", b)
 
 	var update *update
 	if err := json.Unmarshal(b, &update); err != nil {

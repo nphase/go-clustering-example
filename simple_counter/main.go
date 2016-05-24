@@ -13,28 +13,24 @@ var (
 	counter *Counter
 )
 
+// START OMIT
 type Counter struct {
 	val int32
 }
 
-// START OMIT
 // IncVal increments the counter's value by d
 func (c *Counter) IncVal(d int) {
-
 	atomic.AddInt32(&c.val, int32(d))
-
 }
 
 // Count fetches the counter value
 func (c *Counter) Count() int {
-
 	return int(atomic.LoadInt32(&c.val))
-
 }
 
 // END OMIT
 
-//handle inc Request
+// incHandler handles the incoming increment request
 func incHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	amountForm := r.Form.Get("amount")

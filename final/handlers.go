@@ -35,7 +35,6 @@ func incHandler(w http.ResponseWriter, r *http.Request) {
 
 // HTTP Handler to fetch the counter's count. Just /
 func getHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
 
 	val := strconv.Itoa(counter.Count())
 
