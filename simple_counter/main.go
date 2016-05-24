@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	port    = flag.Int("port", 4001, "http port")
+	port    = flag.Int("port", 4000, "http port")
 	counter *Counter
 )
 
@@ -17,6 +17,7 @@ type Counter struct {
 	val int32
 }
 
+// START OMIT
 // IncVal increments the counter's value by d
 func (c *Counter) IncVal(d int) {
 
@@ -30,6 +31,8 @@ func (c *Counter) Count() int {
 	return int(atomic.LoadInt32(&c.val))
 
 }
+
+// END OMIT
 
 //handle inc Request
 func incHandler(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +55,8 @@ func incHandler(w http.ResponseWriter, r *http.Request) {
 	counter.IncVal(amount)
 
 	val := strconv.Itoa(counter.Count())
+
+	fmt.Printf("Incremented counter to %v\n", val)
 	w.Write([]byte(val))
 
 }
@@ -64,6 +69,8 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	flag.Parse()
+
+	counter = &Counter{}
 
 	http.HandleFunc("/inc", incHandler)
 	http.HandleFunc("/", getHandler)

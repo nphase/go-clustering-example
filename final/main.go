@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/memberlist"
 	"github.com/nphase/crdt"
@@ -96,17 +97,17 @@ func (d *delegate) LocalState(join bool) []byte {
 }
 
 // Merge in received counter state whenever
-// join = false means this was received after a push/pull sync.
+// join = false means this was received after a push/pull sync: basically a full state refresh.
 func (d *delegate) MergeRemoteState(buf []byte, join bool) {
 	if len(buf) == 0 {
 		return
 	}
 
-	if !join {
-		return
-	}
+	// if !join {
+	// 	return
+	// }
 
-	fmt.Println("Initiated MergeRemoteState")
+	fmt.Println("Syncing via MergeRemoteState")
 
 	externalCRDT := crdt.NewGCounterFromJSONBytes(buf)
 	counter.Merge(externalCRDT)
@@ -148,6 +149,8 @@ func start() error {
 	c.Delegate = &delegate{}
 	c.BindPort = 0
 	c.Name = hostname + "-" + uuid.NewV4().String()
+
+	c.PushPullInterval = time.Second * 5 // to make it demonstrable
 
 	var err error
 
