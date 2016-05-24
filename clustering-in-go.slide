@@ -7,7 +7,7 @@ MediaMath
 @nphase
 
 * Who am I?
-- Golang enthusiast
+- Go enthusiast
 - These days, mostly codes for fun
 - Focused on Infrastruture & Platform @ [[http://careers.mediamath.com][MediaMath]]
 - We're hiring!
@@ -77,7 +77,7 @@ First, a basic counter service
 * Ok, let's geodistribute it.
 
 - A node (or several) in each datacenter
-- Requests routed to the closest node
+- Increment requests routed to the closest node
 
 Let's stand one up in each.
 
@@ -102,9 +102,28 @@ Enter, the [[https://github.com/hashicorp/memberlist][memberlist]] package
 
 * About SWIM
 
-- "Scalable Weakly-consistent Infection-style Process Group Membership Protocol"
+"Scalable Weakly-consistent Infection-style Process Group Membership Protocol"
 
-*This*slide*is*incomplete*
+Two goals: 
+
+- Maintain a local membership list of non-faulty processes
+- Detect and eventually notify others of process failures
+
+* SWIM mechanics
+
+- Gossip-based
+- On join, a new node does a full state sync with an existing member, and begins gossipping its existence to the cluster
+- Gossip then happens on a regular interval and a number of randomly selected members
+- If a node doesn't ack a message, it is marked "suspicious"
+- If a suspicious node doesn't dispute suspicion after a timeout, it's marked dead
+- Every so often, a full state sync is done between random members (expensive!)
+- Tradeoffs between bandwidth and convergence time are configurable
+
+More details about SWIM can be found [[https://www.cs.cornell.edu/~asdas/research/dsn02-swim.pdf][here]] and [[http://prakhar.me/articles/swim/][here]].
+
+
+
+
 
 * Slide showing off code with memberlist implemented
 
@@ -122,14 +141,18 @@ Enter, the [[https://github.com/hashicorp/memberlist][memberlist]] package
 
 * CRDTs, simplified
 
+#semilattice algebra lets them merbe without conflict
+
+
 - CRDT = Conflict-Free Replicated Data Types
 - Counters, Sets, Maps, et al
+- Operations within the type must be associative, commutative, and idempotent 
 - Order-free
-- Eventually consistent: there is no single source of truth!
-- Operations within the type must be associative, commutative, and idempotent
-- Therefore, very easy to handle failure: just retry the merge!
+- Therefore, very easy to handle failure scenarios: just retry the merge!
 
+#network down? merge again! messages out of order? merge again! state out of sync? merge again!
 
+CRDTs are by nature eventually consistent, because there is no single source of truth.
 
 Some notes can be found [[http://hal.upmc.fr/inria-00555588/document][here]] and [[https://github.com/pfraze/crdt_notes][here]] (among many others!). 
 
@@ -142,10 +165,13 @@ Perhaps one of the most basic CRDTs:
 - Nodes communicate their counter state with other nodes
 - Merges take the max() count for each node
 
-- Final Counter Value is the sum of all node counts
+G-Counter's Value is the sum of all node count values
 
 
-* Slide showing off code with CRDT implemented
+#why go through all the trouble? when i can just query locally?
+#what if the node goes down permanently? waht if you lose the state?
+
+* 
 
 	type GCounter struct {
 		// ident provides a unique identity to each replica.
@@ -176,16 +202,45 @@ Perhaps one of the most basic CRDTs:
 
 * Demo (of CRDT's internals)
 
-See the internals? Damn, still not merging
+Damn, still not merging
 
 *This*slide*is*incomplete*
 
-* Now let's merge state
+* Let's Merge State!
 
-* Slide showing push/pull state merge code
+* Merging State via Memberlist
 
+   [DEBUG] memberlist: Initiating push/pull sync with: 127.0.0.1:61300
+   
 - Explain push/pull state
 - Explain the 3 second timeout.
+
+*This*slide*is*incomplete*
+
+
+* Merging State via Memberlist
+
+	// Share the local counter state via MemberList to another node
+	func (d *delegate) LocalState(join bool) []byte {
+
+		b, err := counter.MarshalJSON()
+
+		if err != nil {
+			panic(err)
+		}
+
+		return b
+	}
+
+	// Merge a received counter state
+	func (d *delegate) MergeRemoteState(buf []byte, join bool) {
+		if len(buf) == 0 {
+			return
+		}
+
+		externalCRDT := crdt.NewGCounterFromJSON(buf)
+		counter.Merge(externalCRDT)
+	}
 
 * Demo (of the push pull sync itself)
 

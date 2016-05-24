@@ -64,8 +64,6 @@ func (d *delegate) NotifyMsg(b []byte) {
 		return
 	}
 
-	fmt.Printf("Received A Message!\n\t%+s\n", b)
-
 	var update *update
 	if err := json.Unmarshal(b, &update); err != nil {
 		return
@@ -85,7 +83,7 @@ func (d *delegate) GetBroadcasts(overhead, limit int) [][]byte {
 	return broadcasts.GetBroadcasts(overhead, limit)
 }
 
-//share the local counter state
+// Share the local counter state via MemberList to another node
 func (d *delegate) LocalState(join bool) []byte {
 
 	b, err := counter.MarshalJSON()
@@ -98,21 +96,17 @@ func (d *delegate) LocalState(join bool) []byte {
 }
 
 // Merge in received counter state whenever
-// join = false means this was received after a push/pull sync: basically a full state refresh.
+// join = false means this was received after a push/pull sync
+// basically a full state refresh.
 func (d *delegate) MergeRemoteState(buf []byte, join bool) {
 	if len(buf) == 0 {
 		return
 	}
 
-	// if !join {
-	// 	return
-	// }
-
 	fmt.Println("Syncing via MergeRemoteState")
 
 	externalCRDT := crdt.NewGCounterFromJSONBytes(buf)
 	counter.Merge(externalCRDT)
-
 }
 
 // BroadcastState broadcasts the local counter state to all cluster members
