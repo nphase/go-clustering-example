@@ -113,8 +113,8 @@ Two goals:
 
 - Gossip-based
 - On join, a new node does a full state sync with an existing member, and begins gossipping its existence to the cluster
-- Gossip then happens on a regular interval and a number of randomly selected members
-- If a node doesn't ack a message, it is marked "suspicious"
+- Gossip about memberlist state happens on a regular interval and against number of randomly selected members
+- If a node doesn't ack a probe message, it is marked "suspicious"
 - If a suspicious node doesn't dispute suspicion after a timeout, it's marked dead
 - Every so often, a full state sync is done between random members (expensive!)
 - Tradeoffs between bandwidth and convergence time are configurable
@@ -211,11 +211,13 @@ Damn, still not merging
 * Merging State via Memberlist
 
    [DEBUG] memberlist: Initiating push/pull sync with: 127.0.0.1:61300
-   
-- Explain push/pull state
-- Explain the 3 second timeout.
 
-*This*slide*is*incomplete*
+- Memberlist does a "push/pull" to do a complete state exchange with another random member
+- We can piggyback this state exchange via the `Delegate` interface: `LocalState()` and `MergeRemoteState()` 
+- Push/pull interval is configurable
+- Happens over TCP
+
+Let's use it to eventually merge state in the background.
 
 
 * Merging State via Memberlist
@@ -246,11 +248,38 @@ Damn, still not merging
 
 (it works!)
 
-* Slide
+* Success! (Eventually)
+
+* Want so sync faster? 
+
+It's possible to broadcast to all member nodes, via `NotifyMsg()` and `QueueBroadcast()`
+
+	func BroadcastState() {
+		...
+		broadcasts.QueueBroadcast(&broadcast{
+			msg:    b,
+		})
+	}
+
+	// NotifyMsg is invoked upon receipt of message
+	func (d *delegate) NotifyMsg(b []byte) {
+		...
+		switch update.Action {
+		case "merge":
+			externalCRDT := crdt.NewGCounterFromJSONBytes(update.Data)
+			counter.Merge(externalCRDT)
+		}
+		...
+	}
+
+* Demo
 
 * Next:
 
-- Jepsen testing
+- Jepsen tests!
+- Implement your own RPC instead of Memberlist' `Delegate` for finer performance and authn/z control
+
+
 
 
 * Slide
