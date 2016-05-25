@@ -29,8 +29,6 @@ func incHandler(w http.ResponseWriter, r *http.Request) {
 	val := strconv.Itoa(counter.Count())
 	w.Write([]byte(val))
 
-	// broadcast the state?
-	// go BroadcastState()
 }
 
 // HTTP Handler to fetch the counter's count. Just /

@@ -103,8 +103,6 @@ func (d *delegate) MergeRemoteState(buf []byte, join bool) {
 		return
 	}
 
-	fmt.Println("Syncing via MergeRemoteState")
-
 	externalCRDT := crdt.NewGCounterFromJSONBytes(buf)
 	counter.Merge(externalCRDT)
 }
@@ -146,6 +144,7 @@ func start() error {
 	c.Name = hostname + "-" + uuid.NewV4().String()
 
 	c.PushPullInterval = time.Second * 5 // to make it demonstrable
+	c.ProbeInterval = time.Second * 1    // to make failure demonstrable
 
 	var err error
 
@@ -153,6 +152,7 @@ func start() error {
 	if err != nil {
 		return err
 	}
+
 	if len(*members) > 0 {
 		parts := strings.Split(*members, ",")
 		_, err := m.Join(parts)
@@ -160,14 +160,17 @@ func start() error {
 			return err
 		}
 	}
+
 	broadcasts = &memberlist.TransmitLimitedQueue{
 		NumNodes: func() int {
 			return m.NumMembers()
 		},
 		RetransmitMult: 3,
 	}
+
 	node := m.LocalNode()
 	fmt.Printf("Local member %s:%d\n", node.Addr, node.Port)
+
 	return nil
 }
 

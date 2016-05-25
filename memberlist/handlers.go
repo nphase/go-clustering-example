@@ -1,34 +1,11 @@
 package main
 
 import (
-	"flag"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
-	"sync/atomic"
 )
-
-var (
-	port    = flag.Int("port", 4000, "http port")
-	counter *Counter
-)
-
-// START OMIT
-type Counter struct {
-	val int32
-}
-
-// IncVal increments the counter's value by d
-func (c *Counter) IncVal(d int) {
-	atomic.AddInt32(&c.val, int32(d))
-}
-
-// Count fetches the counter value
-func (c *Counter) Count() int {
-	return int(atomic.LoadInt32(&c.val))
-}
-
-// END OMIT
 
 // incHandler is a HTTP Handler for increment requets. Takes the form of /inc?amount=1
 func incHandler(w http.ResponseWriter, r *http.Request) {
@@ -64,16 +41,9 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(val))
 }
 
-func main() {
-	flag.Parse()
+// HTTP Handler to fetch the cluster membership state
+func clusterHandler(w http.ResponseWriter, r *http.Request) {
 
-	counter = &Counter{}
+	json.NewEncoder(w).Encode(m.Members())
 
-	http.HandleFunc("/inc", incHandler)
-	http.HandleFunc("/", getHandler)
-
-	fmt.Printf("Listening on :%d\n", *port)
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
-		fmt.Println(err)
-	}
 }
